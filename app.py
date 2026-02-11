@@ -18,6 +18,21 @@ ICON_SHIELD = _LUCIDE.format(s=32, paths=(
     'a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'
 ))
 
+ICON_MICROSCOPE = _LUCIDE.format(s=20, paths=(
+    '<path d="M6 18h8"/><path d="M3 22h18"/>'
+    '<path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/>'
+    '<path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>'
+    '<path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>'
+))
+
+ICON_KEY_ROUND = _LUCIDE.format(s=20, paths=(
+    '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3'
+    'a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1'
+    'a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814'
+    'a6.5 6.5 0 1 0-4-4z"/>'
+    '<circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>'
+))
+
 # ── Page config ───────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -29,9 +44,21 @@ st.set_page_config(
 # ── Custom CSS ────────────────────────────────────────────────────────────
 
 st.markdown("""<style>
-/* Always show the copy-to-clipboard button on code blocks */
+/* Always show copy-to-clipboard button on code blocks */
 [data-testid="stCode"] button,
-.stCodeBlock button[kind="icon"] { opacity: 1 !important; }
+[data-testid="stCode"] > div:last-child,
+[data-testid="stCodeBlock"] button,
+[data-testid="stCodeBlock"] > div:last-child,
+.stCode button,
+.stCode > div:last-child,
+.stCodeBlock button,
+.stCodeBlock > div:last-child,
+pre + div,
+pre ~ button {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transition: none !important;
+}
 </style>""", unsafe_allow_html=True)
 
 # ── Header ────────────────────────────────────────────────────────────────
@@ -54,6 +81,11 @@ tab_check, tab_generate = st.tabs(["Check Password", "Generate Password"])
 # ── Check tab ──────────────────────────────────────────────────────────────
 
 with tab_check:
+    st.markdown(
+        f'<p style="display:flex;align-items:center;gap:6px">'
+        f'{ICON_MICROSCOPE} <strong>Analyse a password</strong></p>',
+        unsafe_allow_html=True,
+    )
     password = st.text_input(
         "Password",
         type="default",
@@ -76,7 +108,7 @@ with tab_check:
         for w in report["warnings"]:
             st.warning(w, icon="\u26a0\ufe0f")
 
-        if st.button("Check breach database", type="primary"):
+        if st.button("Check online database", type="primary"):
             with st.spinner("Querying Have I Been Pwned\u2026"):
                 try:
                     count = check_breach(password)
@@ -98,6 +130,11 @@ with tab_check:
 # ── Generate tab ───────────────────────────────────────────────────────────
 
 with tab_generate:
+    st.markdown(
+        f'<p style="display:flex;align-items:center;gap:6px">'
+        f'{ICON_KEY_ROUND} <strong>Generate a secure password</strong></p>',
+        unsafe_allow_html=True,
+    )
     col1, col2 = st.columns(2)
     with col1:
         length = st.slider("Length", 8, 64, 16)
