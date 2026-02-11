@@ -35,7 +35,7 @@ HTML_TEMPLATE = """\
     <script>
       stlite.mount(
         {{
-          requirements: ["pyodide-http"],
+          requirements: ["pyodide-http", "requests"],
           entrypoint: "app.py",
           files: {{
             "app.py": {source},
