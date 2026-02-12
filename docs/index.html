@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Password Assistant</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%2300f0ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%23153036' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.9.2/core.css">
     <script type="module" src="https://pyscript.net/releases/2024.9.2/core.js"></script>
     <style>
@@ -84,6 +87,7 @@
             white-space: nowrap;
             overflow: hidden;
             width: 100%;
+            margin-top: -5rem;
             flex-shrink: 0;
         }
         .ticker {
@@ -105,9 +109,9 @@
         .glass-panel {
             position: relative;
             z-index: 10;
-            width: 90%;
+            width: 20%;
             max-width: 720px;
-            padding: 3rem 2.8rem 2.5rem;
+            padding: 3rem 2rem 2rem;
             margin: 2rem 0;
             background: var(--glass-bg);
             backdrop-filter: blur(25px);
@@ -184,8 +188,8 @@
             font-size: 1.3rem;
             color: var(--ui-accent);
             outline: none;
-            letter-spacing: 4px;
-            font-family: 'Courier New', monospace;
+            letter-spacing: 2px;
+            font-family: 'Space Grotesk', sans-serif;
             transition: border-color 0.4s ease;
         }
         #passwordInput::placeholder {
@@ -455,9 +459,25 @@
             color: #888;
         }
 
-        /* ── Tab content ── */
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        /* ── Tab content (grid-stack keeps panel height stable) ── */
+        .tab-content-wrapper {
+            display: grid;
+        }
+        .tab-content-wrapper > .tab-content {
+            grid-area: 1 / 1;
+            visibility: hidden;
+        }
+        .tab-content-wrapper > .tab-content.active {
+            visibility: visible;
+        }
+        /* Kill child transitions so visibility switches instantly */
+        .tab-content-wrapper > .tab-content:not(.active),
+        .tab-content-wrapper > .tab-content:not(.active) * {
+            visibility: hidden !important;
+            transition: none !important;
+        }
+
+        #breachResult { min-height: 4rem; }
 
         /* ── Privacy note ── */
         .privacy-note {
@@ -513,6 +533,7 @@
             <button class="tab" data-tab="generate">Generate Password</button>
         </div>
 
+        <div class="tab-content-wrapper">
         <!-- ═══ Check view ═══ -->
         <div id="checkView" class="tab-content active">
             <div class="input-wrapper">
@@ -579,6 +600,7 @@
                 <div id="genStrength"></div>
             </div>
         </div>
+        </div><!-- /tab-content-wrapper -->
 
         <div class="privacy-note">
             Your password never leaves your browser. Breach checks use
@@ -594,16 +616,16 @@
         // ║  BACKGROUND CONFIG — all animation knobs in one place      ║
         // ╚══════════════════════════════════════════════════════════════╝
         const BG = {
-            words:       ["ENCRYPT","PROTECT","SHIELD","ACCESS","CIPHER","LOCKED","SECURE","BINARY","SYSTEM"],
-            rows:        7,           // number of scrolling rows
-            wordsPerRow: 3,           // random words picked per row
+            words:       ["PASSWORD123","SERIOUSLY_SAFE","PROBABLY_SAFE","ACCESS_DENIED","TOTALLY_SECURE","QWERTY","REALLY_SAFE"],
+            rows:        33,           // number of scrolling rows
+            wordsPerRow: 7,           // random words picked per row
             repeats:     30,          // times the word set is repeated (seamless loop)
-            speed:       4000,        // base animation duration (seconds)
-            variance:    0.35,        // speed randomness (0 = uniform, 1 = wild)
-            fontSize:    "clamp(10rem, 20vw, 24rem)",
-            letterGap:   "-6px",      // letter-spacing
+            speed:       9000,        // base animation duration (seconds)
+            variance:    0.5,        // speed randomness (0 = uniform, 1 = wild)
+            fontSize:    "clamp(8rem, 15vw, 16rem)",
+            letterGap:   "0px",      // letter-spacing
             wordGap:     "50px",      // padding-right between repeated blocks
-            rowPadding:  "1vh",       // vertical padding per row
+            rowPadding:  "0.1vh",       // vertical padding per row
         };
 
         // ── Build rows ──
@@ -632,6 +654,9 @@
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(btn.dataset.tab + 'View').classList.add('active');
+                if (btn.dataset.tab === 'generate') {
+                    document.getElementById('generateBtn').click();
+                }
             });
         });
 
@@ -959,8 +984,9 @@ async def on_copy(event):
         pass
 
 
-# ── Ready — hide loading overlay ──
+# ── Ready — hide loading overlay & pre-generate a password ──
 document.querySelector("#loading-overlay").style.display = "none"
+document.querySelector("#generateBtn").click()
 
     </script>
 
