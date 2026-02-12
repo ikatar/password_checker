@@ -101,9 +101,8 @@ def update_strength(password):
         bar.style.width = "0%"
         bar.style.background = "transparent"
         bar.style.boxShadow = "none"
-        label_el.textContent = "Idle"
-        label_el.style.color = "#555"
-        pct_el.textContent = "00%"
+        label_el.textContent = ""
+        pct_el.textContent = ""
         panel.style.boxShadow = (
             "0 40px 80px rgba(0,0,0,0.6),"
             " inset 0 0 0 1px rgba(255,255,255,0.05)"
@@ -142,6 +141,12 @@ def update_strength(password):
 def on_password_input(event):
     update_strength(event.target.value)
     document.querySelector("#breachResult").innerHTML = ""
+
+
+@when("keydown", "#passwordInput")
+def on_password_keydown(event):
+    if event.key == "Enter":
+        document.querySelector("#breachCheckBtn").click()
 
 
 @when("click", "#breachCheckBtn")
@@ -312,17 +317,13 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
             white-space: nowrap;
             overflow: hidden;
             width: 100%;
-            padding: 1vh 0;
             flex-shrink: 0;
         }
         .ticker {
             display: inline-block;
-            font-size: clamp(10rem, 20vw, 24rem);
             font-weight: 900;
             text-transform: uppercase;
             line-height: 1.4;
-            letter-spacing: -6px;
-            padding-right: 50px;
             will-change: transform;
         }
         .row:nth-child(3n+1) .ticker { color: var(--row-color-1); }
@@ -338,7 +339,7 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
             position: relative;
             z-index: 10;
             width: 90%;
-            max-width: 480px;
+            max-width: 720px;
             padding: 3rem 2.8rem 2.5rem;
             margin: 2rem 0;
             background: var(--glass-bg);
@@ -407,9 +408,9 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
             position: relative;
             margin-bottom: 1.5rem;
         }
-        .input-wrapper input[type="password"] {
+        #passwordInput {
             width: 100%;
-            padding: 0.9rem 0;
+            padding: 0.9rem 2.5rem 0.9rem 0;
             background: transparent;
             border: none;
             border-bottom: 2px solid #333;
@@ -420,13 +421,27 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
             font-family: 'Courier New', monospace;
             transition: border-color 0.4s ease;
         }
-        .input-wrapper input::placeholder {
+        #passwordInput::placeholder {
             letter-spacing: 1px;
             color: #444;
             font-weight: 400;
             font-family: 'Inter', -apple-system, sans-serif;
         }
-        .input-wrapper input:focus { border-bottom-color: #666; }
+        #passwordInput:focus { border-bottom-color: #666; }
+        .toggle-vis {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-75%);
+            background: none;
+            border: none;
+            color: #555;
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            transition: color 0.3s ease;
+        }
+        .toggle-vis:hover { color: #999; }
 
         /* ── Strength bar ── */
         .strength-bar-container {
@@ -681,12 +696,12 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
         .privacy-note {
             margin-top: 2rem;
             padding-top: 1.2rem;
-            border-top: 1px solid rgba(255,255,255,0.05);
-            font-size: 0.6rem;
-            color: #444;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            font-size: 0.75rem;
+            color: #999;
             line-height: 1.6;
         }
-        .privacy-note a { color: #666; }
+        .privacy-note a { color: #ccc; }
 
         /* ── Responsive ── */
         @media (max-width: 600px) {
@@ -734,14 +749,30 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
         <!-- ═══ Check view ═══ -->
         <div id="checkView" class="tab-content active">
             <div class="input-wrapper">
-                <input type="password" id="passwordInput"
+                <input type="text" id="passwordInput"
                        placeholder="Enter password..." spellcheck="false" autocomplete="off">
+                <button type="button" class="toggle-vis" id="toggleVis" aria-label="Toggle password visibility">
+                    <svg id="eyeOpen" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg id="eyeClosed" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                         style="display:none">
+                        <path d="m15 18-.722-3.25"/>
+                        <path d="M2 8a10.645 10.645 0 0 0 20 0"/>
+                        <path d="m20 15-1.726-2.05"/>
+                        <path d="m4 15 1.726-2.05"/>
+                        <path d="m9 18 .722-3.25"/>
+                    </svg>
+                </button>
                 <div class="strength-bar-container">
                     <div class="strength-bar" id="strengthBar"></div>
                 </div>
                 <div class="status-row">
-                    <span id="strengthText">Idle</span>
-                    <span id="strengthPercent">00%</span>
+                    <span id="strengthText"></span>
+                    <span id="strengthPercent"></span>
                 </div>
             </div>
 
@@ -790,22 +821,39 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
         </div>
     </div>
 
-    <!-- Background animation + tab switching (pure JS, instant) -->
+    <!-- Background animation + tab switching + controls (pure JS, instant) -->
     <script>
-        // ── Kinetic background ──
+        // ╔══════════════════════════════════════════════════════════════╗
+        // ║  BACKGROUND CONFIG — all animation knobs in one place      ║
+        // ╚══════════════════════════════════════════════════════════════╝
+        const BG = {
+            words:       ["ENCRYPT","PROTECT","SHIELD","ACCESS","CIPHER","LOCKED","SECURE","BINARY","SYSTEM"],
+            rows:        7,           // number of scrolling rows
+            wordsPerRow: 3,           // random words picked per row
+            repeats:     30,          // times the word set is repeated (seamless loop)
+            speed:       4000,        // base animation duration (seconds)
+            variance:    0.35,        // speed randomness (0 = uniform, 1 = wild)
+            fontSize:    "clamp(10rem, 20vw, 24rem)",
+            letterGap:   "-6px",      // letter-spacing
+            wordGap:     "50px",      // padding-right between repeated blocks
+            rowPadding:  "1vh",       // vertical padding per row
+        };
+
+        // ── Build rows ──
         const bgRows = document.getElementById('bgRows');
-        const vocab = ["ENCRYPT","PROTECT","SHIELD","ACCESS","CIPHER","LOCKED","SECURE","BINARY","SYSTEM"];
-        const BASE_SPEED = 4000;
-        const VARIANCE = 0.35;
-        for (let i = 0; i < 7; i++) {
+        for (let i = 0; i < BG.rows; i++) {
             const row = document.createElement('div');
             row.className = 'row';
+            row.style.padding = `${BG.rowPadding} 0`;
             const ticker = document.createElement('div');
             ticker.className = `ticker ${i % 2 === 0 ? 'animate-left' : 'animate-right'}`;
-            const v = BASE_SPEED * VARIANCE;
-            ticker.style.animationDuration = `${BASE_SPEED + (Math.random() * v * 2 - v)}s`;
-            const words = [...vocab].sort(() => 0.5 - Math.random()).slice(0, 3).join("  ");
-            ticker.innerText = (words + " ").repeat(30);
+            const v = BG.speed * BG.variance;
+            ticker.style.animationDuration = `${BG.speed + (Math.random() * v * 2 - v)}s`;
+            ticker.style.fontSize = BG.fontSize;
+            ticker.style.letterSpacing = BG.letterGap;
+            ticker.style.paddingRight = BG.wordGap;
+            const words = [...BG.words].sort(() => 0.5 - Math.random()).slice(0, BG.wordsPerRow).join("  ");
+            ticker.innerText = (words + " ").repeat(BG.repeats);
             row.appendChild(ticker);
             bgRows.appendChild(row);
         }
@@ -824,6 +872,15 @@ HTML_TEMPLATE = r'''<!DOCTYPE html>
         const slider = document.getElementById('lengthSlider');
         const sliderVal = document.getElementById('lengthValue');
         slider.addEventListener('input', () => { sliderVal.textContent = slider.value; });
+
+        // ── Password visibility toggle ──
+        document.getElementById('toggleVis').addEventListener('click', () => {
+            const inp = document.getElementById('passwordInput');
+            const isText = inp.type === 'text';
+            inp.type = isText ? 'password' : 'text';
+            document.getElementById('eyeOpen').style.display = isText ? 'none' : '';
+            document.getElementById('eyeClosed').style.display = isText ? '' : 'none';
+        });
     </script>
 
     <!-- Python logic via PyScript -->
