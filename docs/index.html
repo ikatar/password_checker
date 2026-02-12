@@ -524,7 +524,7 @@
                 </svg>
                 Password Assistant
             </h1>
-            <p>Client-side security tool</p>
+            <p>User-side Password Assistant</p>
         </div>
 
         <!-- Tabs -->
@@ -603,10 +603,12 @@
         </div><!-- /tab-content-wrapper -->
 
         <div class="privacy-note">
-            Your password never leaves your browser. Breach checks use
+            Your password never leaves your browser. Breach checks use 
             <a href="https://en.wikipedia.org/wiki/K-anonymity" target="_blank"
-               rel="noopener">k-anonymity</a> &mdash; only the first 5 characters
-            of the SHA-1 hash are sent.
+               rel="noopener">k-anonymity</a>
+               <p>
+                This means that only the first five characters of the SHA-1 hash are sent.
+                <p>
         </div>
     </div>
 
@@ -728,14 +730,16 @@ def score_strength(password: str) -> dict:
 
     entropy = len(password) * math.log2(pool) if password else 0.0
 
-    # Pattern detection
+    # Pattern detection (skip for high-entropy passwords where
+    # short sequences are statistically expected, not human-chosen)
     lower = password.lower()
-    for seq in _SEQUENCES:
-        for i in range(len(seq) - 2):
-            chunk = seq[i : i + 3]
-            if chunk in lower or chunk[::-1] in lower:
-                warnings.append(f"Sequential pattern detected ('{chunk}')")
-                break
+    if entropy < 90:
+        for seq in _SEQUENCES:
+            for i in range(len(seq) - 2):
+                chunk = seq[i : i + 3]
+                if chunk in lower or chunk[::-1] in lower:
+                    warnings.append(f"Sequential pattern detected ('{chunk}')")
+                    break
 
     if re.search(r"(.)\1{2,}", password):
         warnings.append("Repeated characters detected (e.g. 'aaa')")
@@ -750,13 +754,14 @@ def score_strength(password: str) -> dict:
 
     # Composite score
     class_count = sum(classes.values())
+    high_entropy = entropy >= 90  # enough bits to override class-count gates
     if entropy < 28 or len(password) < 8:
         score = 0
-    elif entropy < 36 or class_count < 2:
+    elif entropy < 36 or (not high_entropy and class_count < 2):
         score = 1
-    elif entropy < 50 or class_count < 3:
+    elif entropy < 50 or (not high_entropy and class_count < 3):
         score = 2
-    elif entropy < 65:
+    elif entropy < 65 and not high_entropy:
         score = 3
     else:
         score = 4
