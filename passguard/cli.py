@@ -9,7 +9,7 @@ Usage examples:
 import argparse
 import sys
 
-from passguard import check_breach, score_strength, generate_password
+from passguard import check_breach, check_email_breach, score_strength, generate_password
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,12 +48,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Number of passwords to generate (default: 1)",
     )
 
+    # ── email ─────────────────────────────────────────────────────────
+    email_p = sub.add_parser(
+        "email", help="Check emails against breach databases",
+    )
+    email_p.add_argument("emails", nargs="+", help="Email addresses to check")
+
     args = parser.parse_args(argv)
 
     if args.command == "check":
         return _cmd_check(args)
     if args.command == "generate":
         return _cmd_generate(args)
+    if args.command == "email":
+        return _cmd_email(args)
 
     parser.print_help()
     return 0
@@ -88,6 +96,34 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 print(f"            ! {w}")
 
     return 1 if breached else 0
+
+
+def _cmd_email(args: argparse.Namespace) -> int:
+    any_exposed = False
+    for email in args.emails:
+        result = check_email_breach(email)
+
+        if result["errors"] and not result["sources_checked"]:
+            print(f"  ERROR   '{email}' -- {'; '.join(result['errors'])}")
+            continue
+
+        if result["exposed"]:
+            any_exposed = True
+            print(f"  EXPOSED '{email}' -- found in {len(result['breaches'])} breach(es)")
+            for b in result["breaches"]:
+                date_str = f" ({b['date']})" if b["date"] else ""
+                print(f"            - {b['name']}{date_str}  [{b['source']}]")
+        else:
+            print(f"  Safe    '{email}' -- not found in any known breaches")
+
+        if result["errors"]:
+            for err in result["errors"]:
+                print(f"            ! {err}")
+
+        if result["sources_checked"]:
+            print(f"            Sources: {', '.join(result['sources_checked'])}")
+
+    return 1 if any_exposed else 0
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:

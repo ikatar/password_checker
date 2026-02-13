@@ -1,7 +1,7 @@
 """PassGuard -- password security utilities.
 
-Core functions for breach checking, strength analysis, and password generation.
-All network calls use the Have I Been Pwned API with k-anonymity.
+Core functions for breach checking, strength analysis, password generation,
+and email breach exposure checking.
 """
 
 import hashlib
@@ -36,6 +36,90 @@ def check_breach(password: str) -> int:
         if hash_suffix == suffix:
             return int(count)
     return 0
+
+
+# ── Email breach checking (XposedOrNot + LeakCheck) ──────────────────────
+
+
+def check_email_breach(email: str) -> dict:
+    """Check if *email* appears in known data breaches.
+
+    Queries XposedOrNot and LeakCheck (both free, keyless).
+    Returns a dict with keys: exposed, breaches, sources_checked, errors.
+    """
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return {
+            "exposed": False,
+            "breaches": [],
+            "sources_checked": [],
+            "errors": [f"Invalid email address: {email}"],
+        }
+
+    breaches: dict[str, dict] = {}
+    errors: list[str] = []
+    sources_checked: list[str] = []
+
+    # ── XposedOrNot ──
+    try:
+        resp = requests.get(
+            f"https://api.xposedornot.com/v1/check-email/{email}",
+            timeout=10,
+        )
+        if resp.status_code == 404:
+            # Not found — not an error, just no breaches
+            sources_checked.append("XposedOrNot")
+        else:
+            resp.raise_for_status()
+            data = resp.json()
+            # Response format: {"breaches": [["Name1","Name2",...]]}
+            # — a list containing one flat list of breach name strings.
+            raw = data.get("breaches", [])
+            names = []
+            for item in raw:
+                if isinstance(item, list):
+                    names.extend(item)
+                else:
+                    names.append(str(item))
+            for name in names:
+                key = name.lower()
+                if key not in breaches:
+                    breaches[key] = {
+                        "name": name,
+                        "date": None,
+                        "source": "XposedOrNot",
+                    }
+            sources_checked.append("XposedOrNot")
+    except Exception as exc:
+        errors.append(f"XposedOrNot: {exc}")
+
+    # ── LeakCheck ──
+    try:
+        resp = requests.get(
+            f"https://leakcheck.io/api/public?check={email}",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success") and data.get("found", 0) > 0:
+            for src in data.get("sources", []):
+                name = src.get("name", "Unknown")
+                key = name.lower()
+                # Prefer LeakCheck entry (has date) over XposedOrNot
+                breaches[key] = {
+                    "name": name,
+                    "date": src.get("date"),
+                    "source": "LeakCheck",
+                }
+        sources_checked.append("LeakCheck")
+    except Exception as exc:
+        errors.append(f"LeakCheck: {exc}")
+
+    return {
+        "exposed": len(breaches) > 0,
+        "breaches": list(breaches.values()),
+        "sources_checked": sources_checked,
+        "errors": errors,
+    }
 
 
 # ── Strength analysis ──────────────────────────────────────────────────────

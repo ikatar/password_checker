@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from passguard import check_breach, generate_password, score_strength
+from passguard import check_breach, check_email_breach, generate_password, score_strength
 
 
 # ── Fixtures / helpers ─────────────────────────────────────────────────────
@@ -162,3 +162,137 @@ class TestGeneratePassword:
     def test_uniqueness(self):
         passwords = {generate_password() for _ in range(50)}
         assert len(passwords) == 50  # all unique
+
+
+# ── check_email_breach ────────────────────────────────────────────────────
+
+# Sample API responses
+XON_FOUND = '{"breaches": [["Adobe", "LinkedIn"]], "status": "success"}'
+XON_NOT_FOUND = '{"Error": "Not found"}'
+
+LC_FOUND = '{"success": true, "found": 2, "sources": [{"name": "Adobe", "date": "2013-10"}, {"name": "Dropbox", "date": "2012-07"}]}'
+LC_NOT_FOUND = '{"success": true, "found": 0, "sources": []}'
+
+
+def _mock_json_response(json_text, status_code=200):
+    """Create a mock response with .json() and .text."""
+    import json
+    resp = Mock()
+    resp.status_code = status_code
+    resp.json.return_value = json.loads(json_text)
+    resp.text = json_text
+    resp.raise_for_status = Mock()
+    return resp
+
+
+def _route_mock(xon_resp, lc_resp):
+    """Return a side_effect function that routes by URL."""
+    def side_effect(url, **kwargs):
+        if "xposedornot.com" in url:
+            if isinstance(xon_resp, Exception):
+                raise xon_resp
+            return xon_resp
+        if "leakcheck.io" in url:
+            if isinstance(lc_resp, Exception):
+                raise lc_resp
+            return lc_resp
+        raise ValueError(f"Unexpected URL: {url}")
+    return side_effect
+
+
+class TestCheckEmailBreach:
+    @patch("passguard.requests.get")
+    def test_both_find_breaches_merged(self, mock_get):
+        mock_get.side_effect = _route_mock(
+            _mock_json_response(XON_FOUND),
+            _mock_json_response(LC_FOUND),
+        )
+        result = check_email_breach("user@example.com")
+        assert result["exposed"] is True
+        names = {b["name"].lower() for b in result["breaches"]}
+        assert "adobe" in names
+        assert "linkedin" in names
+        assert "dropbox" in names
+        assert len(result["errors"]) == 0
+        assert "XposedOrNot" in result["sources_checked"]
+        assert "LeakCheck" in result["sources_checked"]
+
+    @patch("passguard.requests.get")
+    def test_dedup_prefers_leakcheck(self, mock_get):
+        """Adobe appears in both; LeakCheck version (with date) should win."""
+        mock_get.side_effect = _route_mock(
+            _mock_json_response(XON_FOUND),
+            _mock_json_response(LC_FOUND),
+        )
+        result = check_email_breach("user@example.com")
+        adobe = [b for b in result["breaches"] if b["name"].lower() == "adobe"][0]
+        assert adobe["source"] == "LeakCheck"
+        assert adobe["date"] == "2013-10"
+
+    @patch("passguard.requests.get")
+    def test_xon_fails_lc_succeeds(self, mock_get):
+        mock_get.side_effect = _route_mock(
+            ConnectionError("XON down"),
+            _mock_json_response(LC_FOUND),
+        )
+        result = check_email_breach("user@example.com")
+        assert result["exposed"] is True
+        assert len(result["errors"]) == 1
+        assert "XposedOrNot" in result["errors"][0]
+        assert "LeakCheck" in result["sources_checked"]
+        assert "XposedOrNot" not in result["sources_checked"]
+
+    @patch("passguard.requests.get")
+    def test_lc_fails_xon_succeeds(self, mock_get):
+        mock_get.side_effect = _route_mock(
+            _mock_json_response(XON_FOUND),
+            ConnectionError("LC down"),
+        )
+        result = check_email_breach("user@example.com")
+        assert result["exposed"] is True
+        assert len(result["errors"]) == 1
+        assert "LeakCheck" in result["errors"][0]
+        assert "XposedOrNot" in result["sources_checked"]
+
+    @patch("passguard.requests.get")
+    def test_both_fail(self, mock_get):
+        mock_get.side_effect = _route_mock(
+            ConnectionError("XON down"),
+            ConnectionError("LC down"),
+        )
+        result = check_email_breach("user@example.com")
+        assert result["exposed"] is False
+        assert len(result["breaches"]) == 0
+        assert len(result["errors"]) == 2
+
+    @patch("passguard.requests.get")
+    def test_not_found_in_either(self, mock_get):
+        mock_get.side_effect = _route_mock(
+            _mock_json_response(XON_NOT_FOUND, status_code=404),
+            _mock_json_response(LC_NOT_FOUND),
+        )
+        result = check_email_breach("user@example.com")
+        assert result["exposed"] is False
+        assert len(result["breaches"]) == 0
+        assert len(result["errors"]) == 0
+        assert len(result["sources_checked"]) == 2
+
+    def test_invalid_email(self):
+        result = check_email_breach("not-an-email")
+        assert result["exposed"] is False
+        assert len(result["errors"]) == 1
+        assert "Invalid" in result["errors"][0]
+        assert len(result["sources_checked"]) == 0
+
+    @patch("passguard.requests.get")
+    def test_dedup_case_insensitive(self, mock_get):
+        """Breach names differing only in case should be deduplicated."""
+        xon_data = '{"breaches": [["ADOBE", "linkedin"]]}'
+        lc_data = '{"success": true, "found": 1, "sources": [{"name": "adobe", "date": "2013-10"}]}'
+        mock_get.side_effect = _route_mock(
+            _mock_json_response(xon_data),
+            _mock_json_response(lc_data),
+        )
+        result = check_email_breach("user@example.com")
+        adobe_entries = [b for b in result["breaches"] if b["name"].lower() == "adobe"]
+        assert len(adobe_entries) == 1

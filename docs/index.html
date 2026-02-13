@@ -179,7 +179,7 @@
             position: relative;
             margin-bottom: 1.5rem;
         }
-        #passwordInput {
+        #passwordInput, #emailInput {
             width: 100%;
             padding: 0.9rem 2.5rem 0.9rem 0;
             background: transparent;
@@ -192,13 +192,18 @@
             font-family: 'Space Grotesk', sans-serif;
             transition: border-color 0.4s ease;
         }
-        #passwordInput::placeholder {
+        #emailInput {
+            padding-right: 0;
+            letter-spacing: 1px;
+            font-size: 1.1rem;
+        }
+        #passwordInput::placeholder, #emailInput::placeholder {
             letter-spacing: 1px;
             color: #444;
             font-weight: 400;
             font-family: 'Inter', -apple-system, sans-serif;
         }
-        #passwordInput:focus { border-bottom-color: #666; }
+        #passwordInput:focus, #emailInput:focus { border-bottom-color: #666; }
         .toggle-vis {
             position: absolute;
             right: 0;
@@ -354,6 +359,56 @@
             border: 1px solid rgba(255,0,60,0.2);
             background: rgba(255,0,60,0.04);
         }
+
+        /* ── Email breach list ── */
+        .breach-list-scroll {
+            max-height: 12rem;
+            overflow-y: auto;
+            margin-top: 0.8rem;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 6px;
+            scrollbar-width: thin;
+            scrollbar-color: #333 transparent;
+        }
+        .breach-list-scroll::-webkit-scrollbar { width: 5px; }
+        .breach-list-scroll::-webkit-scrollbar-track { background: transparent; }
+        .breach-list-scroll::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+        .breach-list {
+            list-style: none;
+            margin-top: 0.8rem;
+            padding: 0;
+        }
+        .breach-list-scroll .breach-list {
+            margin-top: 0;
+        }
+        .breach-list li {
+            padding: 0.4rem 0.8rem;
+            margin-top: 0.35rem;
+            font-size: 0.7rem;
+            color: #ccc;
+            border-left: 2px solid var(--low-glow);
+            background: rgba(255,0,60,0.03);
+            border-radius: 0 4px 4px 0;
+        }
+        .breach-source {
+            color: #555;
+            font-size: 0.6rem;
+            margin-left: 0.5rem;
+        }
+        .breach-date {
+            color: #888;
+        }
+        .email-sources {
+            margin-top: 0.8rem;
+            font-size: 0.6rem;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        #emailResult { min-height: 4rem; }
 
         /* ── Generate view ── */
         .slider-group { margin-bottom: 1.5rem; }
@@ -525,6 +580,7 @@
         <div class="tabs">
             <button class="tab active" data-tab="check">Check Password</button>
             <button class="tab" data-tab="generate">Generate Password</button>
+            <button class="tab" data-tab="email">Check Email</button>
         </div>
 
         <div class="tab-content-wrapper">
@@ -594,15 +650,30 @@
                 <div id="genStrength"></div>
             </div>
         </div>
+
+        <!-- ═══ Email view ═══ -->
+        <div id="emailView" class="tab-content">
+            <div class="input-wrapper">
+                <input type="email" id="emailInput"
+                       placeholder="Enter email address..." spellcheck="false" autocomplete="off">
+            </div>
+
+            <button id="emailCheckBtn" class="action-btn">Check Email</button>
+            <div id="emailResult"></div>
+        </div>
         </div><!-- /tab-content-wrapper -->
 
         <div class="privacy-note">
-            Your password never leaves your browser. Breach checks use 
+            Your password never leaves your browser. Password breach checks use
             <a href="https://en.wikipedia.org/wiki/K-anonymity" target="_blank"
-               rel="noopener">k-anonymity</a>
-               <p>
-                This means that only the first five characters of the SHA-1 hash are sent.
-                <p>
+               rel="noopener">k-anonymity</a> &mdash;
+            only the first five characters of the SHA-1 hash are sent.
+            <br><br>
+            Email breach checks send the full email address to
+            <a href="https://xposedornot.com" target="_blank" rel="noopener">XposedOrNot</a> and
+            <a href="https://leakcheck.io" target="_blank" rel="noopener">LeakCheck</a>
+            (via <a href="https://corsproxy.io" target="_blank" rel="noopener">corsproxy.io</a>).
+            Powered by <a href="https://leakcheck.io" target="_blank" rel="noopener">LeakCheck</a>.
         </div>
     </div>
 
@@ -710,6 +781,7 @@
     <!-- Python logic via PyScript -->
     <script type="py">
 import hashlib
+import json
 import math
 import re
 import secrets
@@ -1017,6 +1089,140 @@ async def on_copy(event):
         btn.textContent = "COPY"
     except Exception:
         pass
+
+
+# ── Browser-specific email breach check (async pyfetch) ──
+
+async def check_email_breach(email):
+    """Query XposedOrNot + LeakCheck for email breaches via pyfetch."""
+    breaches = {}
+    errors = []
+    sources_checked = []
+
+    # ── XposedOrNot ──
+    try:
+        resp = await pyfetch(
+            f"https://api.xposedornot.com/v1/check-email/{email}",
+        )
+        if resp.status == 404:
+            sources_checked.append("XposedOrNot")
+        else:
+            data = json.loads(await resp.string())
+            raw = data.get("breaches", [])
+            names = []
+            for item in raw:
+                if isinstance(item, list):
+                    names.extend(item)
+                else:
+                    names.append(str(item))
+            for name in names:
+                key = name.lower()
+                if key not in breaches:
+                    breaches[key] = {"name": name, "date": None, "source": "XposedOrNot"}
+            sources_checked.append("XposedOrNot")
+    except Exception as exc:
+        errors.append(f"XposedOrNot: {exc}")
+
+    # ── LeakCheck (routed through CORS proxy in-browser) ──
+    try:
+        from urllib.parse import quote as _urlquote
+        target = f"https://leakcheck.io/api/public?check={email}"
+        resp = await pyfetch(
+            f"https://corsproxy.io/?{_urlquote(target, safe='')}",
+        )
+        data = json.loads(await resp.string())
+        if data.get("success") and data.get("found", 0) > 0:
+            for src in data.get("sources", []):
+                name = src.get("name", "Unknown")
+                key = name.lower()
+                breaches[key] = {"name": name, "date": src.get("date"), "source": "LeakCheck"}
+        sources_checked.append("LeakCheck")
+    except Exception as exc:
+        errors.append(f"LeakCheck: {exc}")
+
+    return {
+        "exposed": len(breaches) > 0,
+        "breaches": list(breaches.values()),
+        "sources_checked": sources_checked,
+        "errors": errors,
+    }
+
+
+# ── Email tab event handlers ──
+
+@when("input", "#emailInput")
+def on_email_input(event):
+    document.querySelector("#emailResult").innerHTML = ""
+
+
+@when("keydown", "#emailInput")
+def on_email_keydown(event):
+    if event.key == "Enter":
+        document.querySelector("#emailCheckBtn").click()
+
+
+@when("click", "#emailCheckBtn")
+async def on_email_check(event):
+    email = document.querySelector("#emailInput").value.strip()
+    result_el = document.querySelector("#emailResult")
+    btn = document.querySelector("#emailCheckBtn")
+
+    if not email or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        result_el.innerHTML = (
+            '<div class="warning-item">Enter a valid email address</div>'
+        )
+        return
+
+    btn.textContent = "CHECKING..."
+    btn.disabled = True
+    try:
+        result = await check_email_breach(email)
+
+        if result["exposed"]:
+            count = len(result["breaches"])
+            html = (
+                '<div class="breach-result breach-danger">'
+                f'Exposed in {count} breach(es)!</div>'
+            )
+            if count > 5:
+                html += '<div class="breach-list-scroll">'
+            html += '<ul class="breach-list">'
+            for b in result["breaches"]:
+                date_str = f' <span class="breach-date">({b["date"]})</span>' if b["date"] else ""
+                html += (
+                    f'<li>{b["name"]}{date_str}'
+                    f' <span class="breach-source">{b["source"]}</span></li>'
+                )
+            html += "</ul>"
+            if count > 5:
+                html += "</div>"
+        else:
+            html = (
+                '<div class="breach-result breach-safe">'
+                'Not found in any known data breaches.</div>'
+            )
+
+        if result["errors"]:
+            for err in result["errors"]:
+                html += f'<div class="warning-item">{err}</div>'
+
+        if result["sources_checked"]:
+            html += (
+                '<div class="email-sources">Checked: '
+                + ", ".join(result["sources_checked"])
+                + "</div>"
+            )
+
+        result_el.innerHTML = html
+
+    except Exception as e:
+        result_el.innerHTML = (
+            '<div class="breach-result breach-danger">'
+            f'Connection error: {e}</div>'
+        )
+    finally:
+        btn.textContent = "CHECK EMAIL"
+        btn.disabled = False
 
 
 # ── Ready — hide loading overlay & pre-generate a password ──
